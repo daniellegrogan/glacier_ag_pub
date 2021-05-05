@@ -39,12 +39,12 @@ sapply(file.sources, source)
 
 ###########################################################################################################################
 ###  File Paths ###
-#path.spn = "/net/nfs/squam/raid/data/WBM_TrANS/HiMAT/2021-04/HiMAT_clim_1981_2060/monthly"  # spinup output
+#path.spn = "/net/nfs/squam/raid/data/WBM_TrANS/HiMAT/2021-04/HiMAT_clim_1981_2100/monthly"  # spinup output
 #path.sim = "/net/nfs/squam/raid/data/WBM_TrANS/HiMAT/2021-04/HiMAT_sim_1981_2016/monthly"   # simulation output
 
 # for testing
 path.spn = "/net/nfs/squam/raid/data/WBM_TrANS/HiMAT/2021-02/HiMAT_clim_1981_2040_v4/monthly"  # spinup output
-path.sim = "/net/nfs/squam/raid/data/WBM_TrANS/HiMAT/2021-02/HiMAT_sim_1981_2016/monthly"   # simulation output
+path.sim = "/net/nfs/squam/raid/data/WBM_TrANS/HiMAT/2021-02/HiMAT_sim_1981_2016/monthly"      # simulation output
 
 path.out  = "results/"  
 
@@ -63,9 +63,10 @@ up.area  = raster("data/HiMAT_full_210_Subset_upstrArea.asc")
 ### Variable lists for spatial aggregation to BASINS ###
 
 # PyGEM variables for basin aggregation
-pygem.to.BAS.agg = c("melt")  # in PyGEM output, "melt" is glacier ice melt
+pygem.to.BAS.agg = c("melt")  # in PyGEM output, "melt" is glacier ice melt (this does not inlude other, non-ice runoff)
 
 # WBM spinup variables for basin aggregation: storage variables
+# this basin aggregation checks if the storage variables have reached equilibrium by the end of spinup
 spn.to.BAS.agg = c("resStorage_mm",  "resStorage_mm_pgi",
                    "endoStrg_mm",    "endoStrg_mm_pgi",    
                    "irrRffStorage",  "surfRffStorage", "runoffStrg_mm_pgi",   # runoffStg = irrRffStorage + surfRffStorage
@@ -73,7 +74,8 @@ spn.to.BAS.agg = c("resStorage_mm",  "resStorage_mm_pgi",
                    "grdWater",       "grndWater_mm_pgi")
 
 # WBM simulation variables for basin aggregation
-wbm.to.BAS.agg = c(# basin characteristics: precipitation
+wbm.to.BAS.agg = c(
+  # basin characteristics: precipitation
   "precip", # this is a WBM input, but it is output again by WBM post-regridding
   
   # Fluxes: water lost to the atmosphere
@@ -114,18 +116,38 @@ crop.to.SUB.agg = c("crop_production", "Irrigated_crop_production")
 lapply(c(pygem.to.BAS.agg, wbm.to.BAS.agg, crop.to.BAS.agg), 
          FUN = function(x) create_dir(file.path("results/basin", x)))
 
-# WBM spinup basin aggregation
+### PyGEM glacier model output basin aggregation (IMPROVE: PYGEM OUTPUT IS BY WATER YEAR. WHERE/HOW TO CLIP THE MONTHS NOT NEEDED?)
+# we have only one PyGEM variable to aggregate
+spatial_agg_glaciers(file.nm    = "/net/nfs/merrimack/raid2/data/glaciers_6.0/HiMAT_full_210_Subset/ERA-Interim_c2_ba1_100sets_1980_2017_m.nc", # PyGEM model output
+                     var        = pygem.to.BAS.agg[1],    # PyGEM variable to aggregate
+                     shp        = basins,                 # shapefile for spatial aggregation
+                     shp.names  = basins$name,            # names from shapefile to use as row names in output
+                     path.out   = file.path(path.out, "basin", pygem.to.BAS.agg[1])   # path to write output
+)
+# monthly to yearly time series
+monthly_to_yearly(data.m = read.csv(file.path(path.out, "basin", pygem.to.BAS.agg[1], "glacier_melt_m.csv")), 
+                  out.nm = file.path(path.out, "basin", pygem.to.BAS.agg[1], "glacier_melt_y.csv"))
+
+# monthly to monthly climatology time series
+monthly_to_mc(data.months = read.csv(file.path(path.out, "basin", pygem.to.BAS.agg[1], "glacier_melt_m.csv")), 
+              years  = seq(1980, 2016), # Note: PyGEM otuput (and monthly aggregates) includes water year data for 1979 and 2017. Those are not used here 
+              out.nm = file.path(path.out, "basin", pygem.to.BAS.agg[1], "glacier_melt_mc.csv"))
+
+# yearly to yearly climatology time series
+yearly_to_yc = function(data.y, years, out.nm=NA)
+
+### WBM spinup basin aggregation
 lapply(spn.to.BAS.agg, FUN = function(x) extract_ts(raster.path   = path.spn,
                                                     monthly.files = 1,
                                                     shp           = basins,
-                                                    years         = seq(2031, 2060), # just evaluate last 30 years to see if run stabilized
+                                                    years         = seq(2071, 2100), # just evaluate last 30 years to see if run stabilized
                                                     var           = x,
                                                     row.nm        = basins$name,
-                                                    out.nm        = paste("results/basin", x, "/", x, "_spn_basins_2031_2060_m.csv", sep="")
+                                                    out.nm        = paste("results/basin", x, "/", x, "_spn_basins_2071_2100_m.csv", sep="")
                                                     )
        )
 
-# WBM simulation basin aggregation
+### WBM simulation basin aggregation
 lapply(wbm.to.BAS.agg, FUN = function(x) extract_ts(raster.path   = path.sim,
                                                     monthly.files = 1,
                                                     shp           = basins,
